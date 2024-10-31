@@ -1,0 +1,131 @@
+  - name: Get SPI status
+    shell: "raspi-config nonint get_spi"
+    register: spi_status
+
+  - name: Print SPI status
+    debug:
+      msg: "SPI status is: {{ spi_status.stdout }}"
+
+  - name: Enable SPI
+    shell: "raspi-config nonint do_spi 0"
+    when: spi_status.stdout != '0'
+
+  - name: Reboot
+    become: True
+    shell: "sleep 1 && shutdown -r now +1"
+    async: 1
+    poll: 0
+    when: spi_status.stdout != '0'
+    notify:
+      - wait-for-reboot
+  
+  - name: Install pip, pil, numpy, git
+    apt:
+      name: 
+        - python3-pip
+        - python3-pil
+        - python3-numpy
+        - git
+      state: present
+
+  - name: Install RPi.GPIO, spidev, requests
+    pip:
+      name: 
+        - RPi.GPIO
+        - spidev
+        - requests
+      state: present
+
+  - name: Create the github directory if it does not exist
+    file:
+      path: /home/{{ ansible_user }}/Github
+      state: directory
+      mode: '0755'
+
+  - name: Git clone the demo 
+    git:
+      repo: https://github.com/waveshare/e-Paper.git
+      dest: /home/{{ ansible_user }}/Github/e-Paper
+
+  - name: Git clone the piholedisplay
+    git:
+      repo: https://github.com/Dfearns7/piholedisplay.git
+      dest: /home/{{ ansible_user }}/Github/piholedisplay
+
+  - name: Go to the piholedisplay folder and make shell file executable
+    command: chdir=/home/{{ ansible_user }}/Github/piholedisplay/ chmod +x start-piholedisplay.sh 
+
+  - name: Check if /etc/rc.local exists
+    stat:
+      path: "/etc/rc.local"
+    register: etc_rc_local_file
+
+  - name: Create the file /etc/rc.local should it not already exist
+    copy:
+      dest: /etc/rc.local
+      owner: root
+      group: root
+      mode: 0750
+      content: |
+        #!/bin/sh -e
+        #
+        # rc.local
+        #
+        # This script is executed at the end of each multiuser runlevel.
+        # Make sure that the script will "exit 0" on success or any other
+        # value on error.
+        #
+        # In order to enable or disable this script just change the execution
+        # bits.
+        #
+        # By default this script does nothing.
+
+        # Print the IP address
+        _IP=$(hostname -I) || true
+        if [ "$_IP" ]; then
+          printf "My IP address is %s\n" "$_IP"
+        fi
+
+        sudo /home/{{ ansible_user }}/Github/piholedisplay/start-piholedisplay.sh &
+
+        exit 0
+
+  - name: Create the systemd service piholedisplay
+    register: piholedisplay_service
+    copy:
+      dest: /etc/systemd/system/piholedisplay.service
+      owner: root
+      group: root
+      mode: 0644
+      content: |
+        [Unit]
+        Description=pihole display stats
+        After=syslog.target network.target auditd.service
+
+        [Service]
+        User=raspberrypi
+        ExecStart=/home/{{ ansible_user }}/Github/piholedisplay/start-piholedisplay.sh
+
+        [Install]
+        WantedBy=multi-user.target
+
+  - name: Reload systemd daemon
+    systemd:
+      daemon_reload: yes
+    when: piholedisplay_service.changed|bool
+
+  - name: Enable piholedisplay.service
+    systemd:
+      name: piholedisplay
+      enabled: true
+
+  - name: Make sure piholedisplay is started and enabled
+    systemd:
+      name: "piholedisplay"
+      state: started
+      enabled: true
+    register: service_started
+
+  - name: sudo start the service
+    command: service piholedisplay start 
+    when: service_started.enabled == false

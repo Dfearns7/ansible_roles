@@ -1,0 +1,7 @@
+  - name: install pi-hole and piholedisplay on raspberry pi
+    hosts: pi0
+    gather_facts: yes
+    become: yes
+    roles: 
+      - pi-hole
+      - piholedisplay

@@ -1,0 +1,6 @@
+  - name: install pihole
+    hosts: pi0 
+    gather_facts: yes
+    become: yes
+    roles: 
+      - pi-hole

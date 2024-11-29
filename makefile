@@ -6,3 +6,6 @@ piholedisplay:
 
 pi-hole:
 	@ansible-playbook pi-hole.yml
+
+pi-frame:
+	@ansible-playbook pi-frame.yml

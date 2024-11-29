@@ -1,5 +1,5 @@
   - name: update and reboot raspberry pi
-    hosts: all 
+    hosts: all
     gather_facts: yes
     become: yes
     roles: 

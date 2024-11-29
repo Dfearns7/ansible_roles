@@ -10,6 +10,18 @@
     shell: "raspi-config nonint do_spi 0"
     when: spi_status.stdout != '0'
 
+  - name: Get I2C status
+    shell: "raspi-config nonint get_i2c"
+    register: I2C_status
+
+  - name: Print I2C status
+    debug:
+      msg: "I2C status is: {{ I2C_status.stdout }}"
+
+  - name: Enable I2C
+    shell: "raspi-config nonint do_i2c 0"
+    when: I2C_status.stdout != '0'
+
   - name: Reboot if required
     reboot:
       msg: "Reboot with ansible..."
@@ -18,23 +30,16 @@
       pre_reboot_delay: 0
       post_reboot_delay: 30
       test_command: uptime
-    when: spi_status.stdout != '0'
+    when: spi_status.stdout != '0' or I2C_status.stdout != '0'
   
-  - name: Install pip, pil, numpy, git
+  - name: Install pip, git
     apt:
       name: 
         - python3-pip
-        - python3-pil
-        - python3-numpy
         - git
-      state: present
-
-  - name: Install RPi.GPIO, spidev, requests
-    pip:
-      name: 
-        - RPi.GPIO
-        - spidev
-        - requests
+        - libjpeg-dev
+        - zlib1g-dev
+        - libopenblas-dev
       state: present
 
   - name: Create the github directory if it does not exist
@@ -43,18 +48,32 @@
       state: directory
       mode: '0755'
 
+  - name: Git clone the pi-frame
+    git:
+      repo: https://github.com/Dfearns7/pi-frame.git
+      dest: /home/{{ ansible_user }}/Github/pi-frame
+
   - name: Git clone the demo 
     git:
-      repo: https://github.com/waveshare/e-Paper.git
-      dest: /home/{{ ansible_user }}/Github/e-Paper
+      repo: https://github.com/pimoroni/inky.git
+      dest: /home/{{ ansible_user }}/Github/inky
 
-  - name: Git clone the piholedisplay
-    git:
-      repo: https://github.com/Dfearns7/piholedisplay.git
-      dest: /home/{{ ansible_user }}/Github/piholedisplay
+  - name: Go to the folder and execute command
+    command: chdir=/home/{{ ansible_user }}/Github/inky ./install.sh -f
+    become: true
+    become_user: "{{ ansible_user }}"
 
-  - name: Go to the piholedisplay folder and make shell file executable
-    command: chdir=/home/{{ ansible_user }}/Github/piholedisplay/ chmod +x start-piholedisplay.sh 
+  - name: Reboot if required
+    reboot:
+      msg: "Reboot with ansible..."
+      connect_timeout: 5
+      reboot_timeout: 300
+      pre_reboot_delay: 0
+      post_reboot_delay: 30
+      test_command: uptime
+
+  - name: Go to the piframe folder and make shell file executable
+    command: chdir=/home/{{ ansible_user }}/Github/pi-frame/ chmod +x start-piframe.sh 
 
   - name: Check if /etc/rc.local exists
     stat:
@@ -87,25 +106,25 @@
           printf "My IP address is %s\n" "$_IP"
         fi
 
-        sudo /home/{{ ansible_user }}/Github/piholedisplay/start-piholedisplay.sh &
+        sudo /home/{{ ansible_user }}/Github/pi-frame/start-piframe.sh &
 
         exit 0
 
-  - name: Create the systemd service piholedisplay
-    register: piholedisplay_service
+  - name: Create the systemd service piframe
+    register: piframe_service
     copy:
-      dest: /etc/systemd/system/piholedisplay.service
+      dest: /etc/systemd/system/piframe.service
       owner: root
       group: root
       mode: 0644
       content: |
         [Unit]
-        Description=pihole display stats
+        Description=piframe display photos
         After=syslog.target network.target auditd.service
 
         [Service]
         User=raspberrypi
-        ExecStart=/home/{{ ansible_user }}/Github/piholedisplay/start-piholedisplay.sh
+        ExecStart=/home/{{ ansible_user }}/Github/pi-frame/start-piframe.sh
 
         [Install]
         WantedBy=multi-user.target
@@ -113,20 +132,20 @@
   - name: Reload systemd daemon
     systemd:
       daemon_reload: yes
-    when: piholedisplay_service.changed|bool
+    when: piframe_service.changed|bool
 
-  - name: Enable piholedisplay.service
+  - name: Enable piframe.service
     systemd:
-      name: piholedisplay
+      name: piframe
       enabled: true
 
   - name: Make sure piholedisplay is started and enabled
     systemd:
-      name: "piholedisplay"
+      name: "piframe"
       state: started
       enabled: true
     register: service_started
 
   - name: sudo start the service
-    command: service piholedisplay start 
+    command: service piframe start 
     when: service_started.enabled == false
